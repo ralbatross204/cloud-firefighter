@@ -3,11 +3,7 @@ const ctx = canvas.getContext('2d');
 
 let t_ = 0;
 
-const player = {
-    x: 0,
-    y: 0,
-    size: 20
-};
+let player = null;
 
 let reticle = null;
 
@@ -45,6 +41,8 @@ let gameOver = false;
         window.close();
     }
 
+    player = makePlayer();
+
     restartGame();
 
     if ( !debugMode) { update(); }
@@ -53,6 +51,11 @@ let gameOver = false;
 function resizeCanvas() {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
+
+    if ( player ) {
+        player.x = canvas.width / 20;
+        player.y = canvas.height / 2;
+    }
 }
 
 function handlePointerdown(e) {
@@ -70,9 +73,6 @@ function handlePointerup(e) {
 
 function restartGame() {
     document.documentElement.classList.remove('game-over');
-    player.x = canvas.width / 20;
-    player.y = canvas.height / 2;
-
 
     enemies = [makeEnemy()];
     droplets = [];
@@ -86,6 +86,7 @@ function restartGame() {
 }
 
 function endGame() {
+    enemies = [];
     document.documentElement.classList.add('game-over');
     canvas.onpointerup = null;
     canvas.onpointerdown = null;
@@ -110,17 +111,20 @@ function update(t) {
         droplets.push(makeDroplet());
     }
 
-    updateEnemies(dt);
-    updateDroplets(dt);
-    updateSteams(dt);
+    if ( dt ) {
+        updatePlayer(dt);
+        updateEnemies(dt);
+        updateDroplets(dt);
+        updateSteams(dt);
+    }
     doDropletCollisions();
 
     checkGameOver();
 
-    drawPlayer();
     drawEnemies();
     drawDroplets();
     drawSteams();
+    drawPlayer();
 
 
     ctx.fillStyle = 'black';
@@ -136,11 +140,117 @@ function update(t) {
     if ( ! debugMode && ! gameOver ) { requestAnimationFrame(update); }
 }
 
+function makePlayer() {
+    const x = canvas.width / 20;
+    const y = canvas.height / 2;
+    const size = 50;
+    const stress = 0;
+
+    const tufts = [];
+    for ( let i = 0 ; i < size*15 ; i++ ) {
+        tufts.push({
+            x: x + (Math.random()*size - size/2),
+            y: y + (Math.random()*size - size/2),
+            size: Math.random()*5 + 5,
+            opacity: 0.1,
+            vx: (Math.random()*3 + 0.5) * ( Math.random() > 0.5 ? -1 : 1),
+            vy: (Math.random()*3 + 0.5) * ( Math.random() > 0.5 ? -1 : 1),
+            evaporating: false
+        })
+    }
+    return {x, y, size, tufts, stress};
+}
+
+function updatePlayer(dt) {
+    dt = dt/1000;
+    for ( const t of player.tufts ) {
+        t.x += t.vx * dt;
+        t.y += t.vy * dt;
+
+        const dx = t.x - player.x;
+        const dy = t.y - player.y;
+
+        if ( t.evaporating ) {
+            t.opacity -= 0.001;
+            if ( t.opacity < 0 ) {
+                t.x = player.x + (Math.random()*100 - 50);
+                t.y = player.y + (Math.random()*50 - 25);
+                t.opacity = 0.1;
+                t.evaporating = false;
+            }
+        } else {
+            const d = dx*dx + dy*dy
+            if ( d > player.size*player.size ) {
+                t.evaporating = true;
+            }
+        }
+    }
+}
+
 function drawPlayer() {
+    for ( const t of player.tufts ) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${t.opacity})`;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, t.size, 0, 2*Math.PI);
+        ctx.fill();
+    }
+    
+    // The eyes
+    const eyeRadius = 7;
+    const xl = player.x - player.size/6;
+    const xr = player.x + player.size/6;
+    const y = player.y - player.size/8;
     ctx.fillStyle = 'white';
     ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size, 0, 2*Math.PI);
+    ctx.arc(xl, y, eyeRadius, 0, 2*Math.PI);
+    ctx.arc(xr, y, eyeRadius, 0, 2*Math.PI);
     ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(xl, y, eyeRadius, 0, 2*Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(xr, y, eyeRadius, 0, 2*Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+
+    // The pupils
+    const pupilRadius = eyeRadius/4;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.arc(xl + eyeRadius - pupilRadius*2, y, pupilRadius, 0, 2*Math.PI);
+    ctx.arc(xr + eyeRadius - pupilRadius*2, y, pupilRadius, 0, 2*Math.PI);
+    ctx.fill();
+
+    // The brows
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.arc(xl - 3*player.stress, y - 10*player.stress, eyeRadius + 3, Math.PI, Math.PI*1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(xr + 3*player.stress, y - 10*player.stress, eyeRadius + 3, Math.PI*1.5, Math.PI*2);
+    ctx.stroke();
+    
+
+    
+    // The mouth
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    if ( reticle ) {
+        // A stern look while shooting
+        ctx.moveTo(player.x - player.size/4, player.y + player.size/4);
+        ctx.lineTo(player.x + player.size/4, player.y + player.size/4);
+    } else {
+        // Otherwise a smile
+        ctx.arc(player.x, player.y + player.size/4, player.size/4, 0, Math.PI);
+    }
+    ctx.stroke();
 }
 
 function makeEnemy() {
@@ -190,9 +300,17 @@ function checkGameOver() {
     for ( const e of enemies ) {
         const dx = player.x - e.x;
         const dy = player.y - e.y;
-        const s = player.size + e.size;
-        if ( dx*dx + dy*dy < s*s ) {
+        const s = player.size/2 + e.size;
+
+        const h = Math.sqrt(dx*dx + dy*dy);
+        if ( h < s ) {
             gameOver = true;
+        }
+
+        if ( h > 500 ) {
+            player.stress = 0;
+        } else {
+            player.stress = (500 - h) / 500;
         }
     }
 }
